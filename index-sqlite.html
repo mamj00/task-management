@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Tareas de Equipo - SQLite</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        .employee-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1em;
+            background: #fff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .employee-table th, .employee-table td {
+            border-bottom: 1px solid #eee;
+            padding: 0.75em 1em;
+            text-align: left;
+        }
+        .employee-table th {
+            background: #f5f7fa;
+            font-weight: 600;
+        }
+        .employee-table tr:last-child td {
+            border-bottom: none;
+        }
+        .employee-table td:last-child {
+            text-align: center;
+        }
+        .employee-action-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            margin: 0 0.25em;
+            font-size: 1.1em;
+            color: #444;
+            transition: color 0.2s;
+        }
+        .employee-action-btn.edit { color: #007bff; }
+        .employee-action-btn.delete { color: #dc3545; }
+        .employee-action-btn:hover { opacity: 0.7; }
+        #employeeListContainer {
+            margin-bottom: 1em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Sistema de Gestión de Tareas (SQLite)</h1>
+            <div class="header-controls">
+                <button id="btnManageEmployees" class="btn"><i class="fas fa-users-cog"></i> Gestionar empleados</button>
+                <button id="btnAddTask" class="btn primary"><i class="fas fa-plus"></i> Nueva Tarea</button>
+            </div>
+        </header>
+
+        <div class="dashboard">
+            <div class="stats-panel">
+                <div class="stat-card">
+                    <h3>Tareas Totales</h3>
+                    <p id="totalTasks">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Tareas Completadas</h3>
+                    <p id="completedTasks">0</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Progreso General</h3>
+                    <div class="progress-container">
+                        <div id="overallProgress" class="progress-bar" style="width: 0%;">0%</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="filters">
+                <div class="filter-group">
+                    <label for="filterEmployee">Filtrar por Empleado:</label>
+                    <select id="filterEmployee">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="filterStatus">Estado:</label>
+                    <select id="filterStatus">
+                        <option value="">Todos</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="en-progreso">En Progreso</option>
+                        <option value="completada">Completada</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="sortBy">Ordenar por:</label>
+                    <select id="sortBy">
+                        <option value="date-asc">Fecha (Más Antigua)</option>
+                        <option value="date-desc">Fecha (Más Reciente)</option>
+                        <option value="priority-desc">Prioridad (Alta-Baja)</option>
+                        <option value="progress-asc">Progreso (Menor-Mayor)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="tasksList" class="tasks-list">
+                <!-- Las tareas se cargarán dinámicamente aquí -->
+                <div class="empty-state">
+                    <i class="fas fa-tasks fa-3x"></i>
+                    <p>No hay tareas disponibles. ¡Añade una nueva tarea para comenzar!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para añadir/editar tareas -->
+    <div id="taskModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="modalTitle">Nueva Tarea</h2>
+            <form id="taskForm">
+                <input type="hidden" id="taskId">
+                <div class="form-group">
+                    <label for="taskTitle">Título de la Tarea:</label>
+                    <input type="text" id="taskTitle" required>
+                </div>
+                <div class="form-group">
+                    <label for="taskDescription">Descripción:</label>
+                    <textarea id="taskDescription" rows="3"></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="taskDueDate">Fecha Límite:</label>
+                        <input type="date" id="taskDueDate">
+                    </div>
+                    <div class="form-group">
+                        <label for="taskPriority">Prioridad:</label>
+                        <select id="taskPriority">
+                            <option value="baja">Baja</option>
+                            <option value="media" selected>Media</option>
+                            <option value="alta">Alta</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="taskAssignee">Asignado a:</label>
+                    <select id="taskAssignee">
+                        <option value="">Sin asignar</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="taskProgress">Progreso (%):</label>
+                    <input type="range" id="taskProgress" min="0" max="100" value="0" step="5">
+                    <span id="progressValue">0%</span>
+                </div>
+                <div class="form-group" id="parentTaskContainer" style="display: none;">
+                    <label for="parentTask">Tarea Principal:</label>
+                    <select id="parentTask">
+                        <option value="">Ninguna (Es tarea principal)</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="btnCancelTask" class="btn secondary">Cancelar</button>
+                    <button type="submit" class="btn primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal para gestionar empleados -->
+    <div id="manageEmployeesModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeManageEmployeesModal()">&times;</span>
+            <h2>Gestión de empleados</h2>
+            <div id="employeeListContainer">
+                <table class="employee-table">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Cargo</th>
+                            <th>Email</th>
+                            <th style="text-align:center;">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="employeeList">
+                        <!-- Los empleados se cargarán dinámicamente aquí -->
+                    </tbody>
+                </table>
+            </div>
+            <button class="btn primary" onclick="openEmployeeModal()"><i class="fas fa-user-plus"></i> Añadir Empleado</button>
+        </div>
+    </div>
+
+    <!-- Modal para añadir/editar empleados -->
+    <div id="employeeModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="employeeModalTitle">Añadir Empleado</h2>
+            <form id="employeeForm">
+                <input type="hidden" id="employeeId">
+                <div class="form-group">
+                    <label for="employeeName">Nombre:</label>
+                    <input type="text" id="employeeName" required>
+                </div>
+                <div class="form-group">
+                    <label for="employeePosition">Cargo:</label>
+                    <input type="text" id="employeePosition">
+                </div>
+                <div class="form-group">
+                    <label for="employeeEmail">Email:</label>
+                    <input type="email" id="employeeEmail">
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="btnCancelEmployee" class="btn secondary">Cancelar</button>
+                    <button type="submit" class="btn primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal para ver subtareas -->
+    <div id="subtasksModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="subtasksModalTitle">Subtareas</h2>
+            <div id="subtasksList" class="subtasks-list">
+                <!-- Las subtareas se cargarán dinámicamente aquí -->
+            </div>
+            <div class="form-actions">
+                <button id="btnAddSubtask" class="btn primary"><i class="fas fa-plus"></i> Añadir Subtarea</button>
+                <button id="btnCloseSubtasks" class="btn secondary">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app-sqlite.js"></script>
+</body>
+</html>
